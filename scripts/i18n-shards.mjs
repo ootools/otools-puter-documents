@@ -94,7 +94,12 @@ function extractFrom(source) {
     while ((m = re.exec(source))) {
       const raw = m[rule.group];
       if (!raw) continue;
-      const v = raw.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\n/g, ' ');
+      // `\\n` 必须还原成**真换行**，不能替换成空格。
+      // 上游 tooltip 原文就是 `标题\\n说明`，渲染时按真换行 split
+      // （3d 的 showTip()、presentation 的 tooltip 组件都是）。
+      // 抹成空格的话词典键与 DOM 属性值逐字符不等，**运行时永远匹配不上**——
+      // 提取阶段看不出任何异常，译文也确实写进去了，就是不生效。
+      const v = raw.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\n/g, '\n');
       if (v.length < 3 || v.length > 120) continue;
       if (!/[A-Za-z一-龥]/.test(v)) continue;
       if (NOT_UI.some((p) => p.test(v))) continue;
@@ -374,7 +379,7 @@ function appendToCatalog(entries, expectedTotal) {
 
   const block = [...merged]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([k, v]) => `  ${quoteKey(k)}: ${quoteKey(v)},`)
+    .map(([k, v]) => `  ${quoteLiteral(k, { asKey: true })}: ${quoteLiteral(v)},`)
     .join('\n');
 
   const out = `${body.head}export default {\n  ...common,\n${block}\n};\n${body.tail}`;
@@ -465,10 +470,38 @@ function verifyCatalogSyntax(expectedTotal) {
     });
 }
 
-function quoteKey(s) {
-  return /^[A-Za-z_$][\w$]*$/.test(s) && !/[.…’']/.test(s)
-    ? s
-    : `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+/**
+ * 把字符串安全地写进JS 字面量。
+ *
+ * 两个坑，都在3d 词典上踩到过：
+ *
+ *1. **控制字符必须转义。** 词典里有 `标题\n提示` 这种 Blender tooltip 形态的键
+ *    （`data-tip` 的原文就是 `标题\n说明`），字面换行落进单引号字符串就是语法错误。
+ *    逐字符走 charCode，不用含字面控制字符的正则——U+2028/2029 在 regex 字面量里非法。
+ *
+ * 2. **值永远要加引号。** 键可以偷懒省略引号（合法标识符），值**不行**：
+ *    `UVs: UV` 里的 `UV` 会被当成变量引用，运行时直接抛 `UV is not defined`，
+ *    而 `node --check` 语法校验却完全通过。所以键和值必须分开处理。
+ *
+ * @param {string} s
+ * @param {{asKey?: boolean}} [opts] asKey=true 时允许合法标识符省略引号
+ * @returns {string}
+ */
+function quoteLiteral(s, { asKey = false } = {}) {
+  if (asKey && /^[A-Za-z_$][\w$]*$/.test(s)) return s;
+  let out = '';
+  for (const ch of s) {
+    const code = ch.codePointAt(0);
+    if (ch === '\\') out += '\\\\';
+    else if (ch === "'") out += "\\'";
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (ch === '\t') out += '\\t';
+    else if (code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029) {
+      out += `\\u${code.toString(16).padStart(4, '0')}`;
+    } else out += ch;
+  }
+  return `'${out}'`;
 }
 
 function doStatus() {
