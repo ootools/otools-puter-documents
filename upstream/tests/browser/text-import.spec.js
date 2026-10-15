@@ -1,0 +1,70 @@
+import { test, expect } from '@playwright/test';
+import { unzipSync, strFromU8 } from 'fflate';
+import { readFileSync } from 'node:fs';
+import { downloadDocx, onTab } from './helpers/editor-tools.js';
+import { reopenDocx } from './helpers/reopen-docx.js';
+
+const input = page => page.getByRole('textbox', { name: 'Document text' });
+
+test('a plain-text file opens as one paragraph per line and saves as a document', async ({ page }, info) => {
+  await page.goto('/mock.html#/home');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import', exact: true }).first().click();
+  await (await chooser).setFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Shopping list\r\n\r\nApples\tRed\r\nPears\r\n') });
+  const text = 'Shopping list\n\nApples\tRed\nPears';
+  await expect(input(page)).toHaveValue(text);
+  await expect(page.locator('.editor-error')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Document name' })).toHaveValue('notes');
+  expect(await input(page).evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([0, 0]);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await expect(page.locator('.canvas-save-status')).toHaveText('Saved to Puter', { timeout: 10000 });
+  await input(page).press('ControlOrMeta+End'); await page.keyboard.type(' and plums');
+  const download = page.waitForEvent('download'); await downloadDocx(page);
+  const path = info.outputPath('notes.docx'); await (await download).saveAs(path);
+  const xml = strFromU8(unzipSync(readFileSync(path))['word/document.xml']);
+  expect(xml.match(/<w:p[ >]/g)).toHaveLength(4);
+  expect(xml).toContain('<w:tab/>');
+  await reopenDocx(page, input(page), path, `${text} and plums`);
+});
+
+const style = page => page.getByRole('combobox', { name: 'Paragraph style', exact: true });
+async function state(page, text) {
+  await input(page).evaluate((el, text) => { const at = el.value.indexOf(text); el.focus(); el.setSelectionRange(at, at + text.length); el.dispatchEvent(new Event('select')); }, text);
+  const pressed = name => page.getByRole('button', { name, exact: true }).getAttribute('aria-pressed');
+  return { style: await style(page).inputValue(), bold: await pressed('Bold'), italic: await pressed('Italic'), bullets: await pressed('Bulleted list'), numbers: await pressed('Numbered list') };
+}
+async function importFile(page, name, mimeType, source) {
+  await page.goto('/mock.html#/new');
+  await expect((await onTab(page, 'home')).getByRole('button', { name: 'Bold', exact: true })).toBeEnabled();
+  await page.locator('input[type=file][accept=".docx"]').setInputFiles({ name, mimeType, buffer: Buffer.from(source) });
+  await expect(page.getByRole('textbox', { name: 'Document name' })).toHaveValue(name.replace(/\.\w+$/, ''));
+}
+
+test('a Markdown file opens with its headings, lists, emphasis and table text', async ({ page }, info) => {
+  await importFile(page, 'notes.md', 'text/markdown', '# Release notes\n\nVersion **2.1** adds *faster* exports and [a guide](https://example.com/guide).\n\n## Changes\n\n- Faster save\n- New templates\n  - Letter\n\n1. Install\n2. Restart\n\n| Name | Value |\n| --- | --- |\n| Size | 12 |\n\n```\nline 1\nline 2\n```\n\n> Quoted.\n\n<script>alert(1)</script>\n');
+  const text = 'Release notes\nVersion 2.1 adds faster exports and a guide.\nChanges\nFaster save\nNew templates\nLetter\nInstall\nRestart\nName\tValue\nSize\t12\nline 1\nline 2\nQuoted.';
+  await expect(input(page)).toHaveValue(text);
+  await expect(page.locator('.editor-error')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  expect(await state(page, 'Release notes')).toMatchObject({ style: 'Heading1' });
+  expect(await state(page, 'Changes')).toMatchObject({ style: 'Heading2' });
+  expect(await state(page, '2.1')).toMatchObject({ style: 'Normal', bold: 'true' });
+  expect(await state(page, 'faster')).toMatchObject({ italic: 'true', bold: 'false' });
+  expect(await state(page, 'Letter')).toMatchObject({ bullets: 'true' });
+  expect(await state(page, 'Restart')).toMatchObject({ numbers: 'true' });
+  await state(page, 'a guide'); await expect((await onTab(page, 'insert')).getByRole('button', { name: 'Insert or edit link', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.canvas-save-status')).toHaveText('Saved to Puter', { timeout: 10000 });
+  const download = page.waitForEvent('download'); await downloadDocx(page);
+  const path = info.outputPath('notes.docx'); await (await download).saveAs(path);
+  const xml = strFromU8(unzipSync(readFileSync(path))['word/document.xml']);
+  expect(xml).toContain('<w:pStyle w:val="Heading1"/>'); expect(xml).toContain('<w:numPr>'); expect(xml).not.toContain('alert');
+  await reopenDocx(page, input(page), path, text);
+});
+
+test('an HTML file opens with its structure', async ({ page }) => {
+  await importFile(page, 'page.html', 'text/html', '<!doctype html><html><head><title>T</title><style>p{color:red}</style></head><body><h2>Section</h2><p>Some <strong>strong</strong> text.</p><ol><li>One</li><li>Two</li></ol></body></html>');
+  await expect(input(page)).toHaveValue('Section\nSome strong text.\nOne\nTwo');
+  expect(await state(page, 'Section')).toMatchObject({ style: 'Heading2' });
+  expect(await state(page, 'strong')).toMatchObject({ bold: 'true' });
+  expect(await state(page, 'Two')).toMatchObject({ numbers: 'true' });
+});

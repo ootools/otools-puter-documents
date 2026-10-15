@@ -1,0 +1,58 @@
+import { test, expect } from '@playwright/test';
+import { onTab } from './helpers/editor-tools.js';
+
+async function headingsDocument(page) {
+  await page.goto('/playground.html');
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'Document text' });
+  await input.fill('Introduction\nThe plan in brief.\nBackground\nWhy the plan matters.\nResults\nThe final plan.');
+  for (const [text, level] of [['Introduction', 1], ['Background', 2], ['Results', 1]]) {
+    await input.evaluate((el, text) => { const at = el.value.indexOf(text); el.setSelectionRange(at, at); el.dispatchEvent(new Event('select', { bubbles: true })); }, text);
+    await input.press(`Control+Alt+${level}`);
+  }
+  return input;
+}
+
+test('the Navigation pane browses headings, collapses levels and goes to a heading', async ({ page }) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  const input = await headingsDocument(page);
+  await (await onTab(page, 'view')).locator('.ribbon-card').getByRole('button', { name: 'Navigation Pane' }).click();
+  const pane = page.getByRole('complementary', { name: 'Navigation' });
+  const tree = pane.getByRole('tree', { name: 'Headings' });
+  await expect(tree.getByRole('treeitem')).toHaveText(['Introduction', 'Background', 'Results']);
+  await pane.getByRole('button', { name: 'Collapse Introduction' }).click();
+  await expect(tree.getByRole('treeitem')).toHaveText(['Introduction', 'Results']);
+  await pane.getByRole('button', { name: 'Expand Introduction' }).click();
+  await tree.getByRole('treeitem', { name: /Background/ }).click();
+  await expect(input).toBeFocused();
+  expect(await input.evaluate(el => el.value.slice(el.selectionStart, el.selectionStart + 10))).toBe('Background');
+  await expect(tree.getByRole('treeitem', { name: /Background/ })).toHaveAttribute('aria-current', 'location');
+  expect(errors).toEqual([]);
+});
+
+test('Ctrl/Cmd+F searches from the pane, lists results in context and pages show as thumbnails', async ({ page }) => {
+  const input = await headingsDocument(page);
+  await input.evaluate(el => { const at = el.value.indexOf('plan'); el.setSelectionRange(at, at + 4); el.dispatchEvent(new Event('select', { bubbles: true })); });
+  await input.press('ControlOrMeta+f');
+  const pane = page.getByRole('complementary', { name: 'Navigation' });
+  const search = pane.getByRole('searchbox', { name: 'Search document' });
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('plan');
+  await expect(pane.getByRole('status')).toHaveText('3 results');
+  await expect(pane.getByRole('tab', { name: 'Results' })).toHaveAttribute('aria-selected', 'true');
+  await expect(pane.locator('.nav-result')).toHaveCount(3);
+  await pane.locator('.nav-result').nth(2).click();
+  expect(await input.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe('plan');
+  expect(await input.evaluate(el => el.value.lastIndexOf('plan'))).toBe(await input.evaluate(el => el.selectionStart));
+  await search.press('Enter');
+  await expect(pane.getByRole('status')).toHaveText('Result 1 of 3');
+  await search.fill('nothing like this');
+  await expect(pane.getByRole('status')).toHaveText('No matches');
+  await pane.getByRole('tab', { name: 'Pages' }).click();
+  await expect(pane.getByRole('listitem', { name: 'Page 1' })).toBeVisible();
+  await pane.getByRole('listitem', { name: 'Page 1' }).click();
+  await expect(input).toBeFocused();
+  await pane.getByRole('searchbox').press('Escape');
+  await pane.getByRole('searchbox').press('Escape');
+  await expect(pane).toBeHidden();
+});

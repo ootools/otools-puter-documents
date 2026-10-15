@@ -1,0 +1,75 @@
+import { test, expect } from '@playwright/test';
+import { onTab, downloadDocx } from './helpers/editor-tools.js';
+import { reopenDocx } from './helpers/reopen-docx.js';
+
+async function newDocument(page, text) {
+  await page.goto('/playground.html');
+  await page.evaluate(() => { localStorage.removeItem('documents:dictionary'); localStorage.removeItem('documents:spellcheck'); });
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'Document text' });
+  await input.fill(text);
+  return input;
+}
+const proofing = page => page.locator('.ed-proofing');
+/** The right-click menu for a word, opened where its first letter is drawn. */
+async function wordMenu(page, input, word) {
+  await input.evaluate((el, word) => { const at = el.value.indexOf(word) + 1; el.setSelectionRange(at, at); el.dispatchEvent(new Event('select', { bubbles: true })); }, word);
+  const caret = await input.evaluate(el => ({ left: parseFloat(el.style.left), top: parseFloat(el.style.top), height: parseFloat(el.style.height) }));
+  const surface = await page.locator('.canvas-pages').boundingBox();
+  await page.mouse.click(surface.x + caret.left, surface.y + caret.top + caret.height / 2, { button: 'right' });
+  return page.getByRole('menu', { name: 'Document menu' });
+}
+
+test('marks misspellings as you type, corrects from the menu and the pane, and keeps the document clean', async ({ page }, info) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  const input = await newDocument(page, 'Teh quick fox jumpd over the dog. Plain words here.');
+  await expect(proofing(page)).toHaveAttribute('aria-label', /2 errors found/);
+  const plain = await page.locator('canvas.canvas-page').first().screenshot({ path: info.outputPath('squiggles.png') });
+  expect(plain.length).toBeGreaterThan(0);
+  // Right-click a misspelled word: suggestions lead the menu.
+  const menu = await wordMenu(page, input, 'jumpd');
+  await expect(menu.getByRole('menuitem').first()).toHaveText('jumped');
+  await menu.getByRole('menuitem', { name: 'jumped', exact: true }).click();
+  await expect(input).toHaveValue('Teh quick fox jumped over the dog. Plain words here.');
+  await expect(proofing(page)).toHaveAttribute('aria-label', /1 error found/);
+  // Review → Spelling (F7) walks through the rest.
+  await input.press('ControlOrMeta+Home');
+  await input.press('F7');
+  const pane = page.getByRole('complementary', { name: 'Spelling' });
+  await expect(pane.locator('mark')).toHaveText('Teh');
+  await expect(pane.getByRole('option').first()).toHaveText('The');
+  await pane.getByRole('button', { name: 'Change', exact: true }).click();
+  await expect(input).toHaveValue('The quick fox jumped over the dog. Plain words here.');
+  await expect(pane.getByRole('status')).toContainText('complete');
+  await expect(proofing(page)).toHaveAttribute('aria-label', 'Spelling: no errors');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(input).toHaveValue('Teh quick fox jumped over the dog. Plain words here.');
+  // Marks never reach the saved document.
+  const path = info.outputPath('spelling.docx');
+  const download = page.waitForEvent('download'); await downloadDocx(page); await (await download).saveAs(path);
+  await reopenDocx(page, input, path, 'Teh quick fox jumped over the dog. Plain words here.');
+  await expect(proofing(page)).toHaveAttribute('aria-label', /1 error found/);
+  expect(errors).toEqual([]);
+});
+
+test('Ignore All, Add to Dictionary and turning checking off', async ({ page }) => {
+  const input = await newDocument(page, 'Zorblax met Quuxly and Zorblax again.');
+  await expect(proofing(page)).toHaveAttribute('aria-label', /3 errors found/);
+  await (await wordMenu(page, input, 'Zorblax')).getByRole('menuitem', { name: 'Ignore All' }).click();
+  await expect(proofing(page)).toHaveAttribute('aria-label', /1 error found/);
+  await (await wordMenu(page, input, 'Quuxly')).getByRole('menuitem', { name: 'Add to Dictionary' }).click();
+  await expect(proofing(page)).toHaveAttribute('aria-label', 'Spelling: no errors');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('documents:dictionary')))).toEqual(['Quuxly']);
+  await onTab(page, 'review');
+  await page.getByRole('button', { name: 'Spelling options' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Check Spelling as You Type' }).click();
+  await expect(proofing(page)).toHaveAttribute('aria-label', 'Spelling check is off');
+  await input.press('End'); await page.keyboard.type(' Blorp.');
+  await expect(proofing(page)).toHaveAttribute('aria-label', 'Spelling check is off');
+  await page.getByRole('button', { name: 'Spelling options' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Check Spelling as You Type' }).click();
+  await expect(proofing(page)).toHaveAttribute('aria-label', /1 error found/);
+  await page.getByRole('button', { name: 'Spelling options' }).click();
+  await page.getByRole('menuitem', { name: 'Recheck Document' }).click();
+  await expect(proofing(page)).toHaveAttribute('aria-label', /3 errors found/);
+});

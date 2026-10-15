@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Documents">
+  <defs>
+    <linearGradient id="docbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a9cff"/>
+      <stop offset="1" stop-color="#1c6fe0"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#docbg)"/>
+  <!-- 纸张：折角 -->
+  <path d="M64 36h88l40 40v144a8 8 0 0 1-8 8H72a8 8 0 0 1-8-8V44a8 8 0 0 1 8-8z" fill="#ffffff"/>
+  <path d="M152 36l40 40h-40z" fill="#c9dcf5"/>
+  <!-- 标题条 -->
+  <rect x="88" y="72" width="46" height="12" rx="6" fill="#f0a03a"/>
+  <!-- 正文行 -->
+  <g stroke="#1c6fe0" stroke-width="10" stroke-linecap="round" opacity="0.75">
+    <path d="M88 110h80"/>
+    <path d="M88 138h80"/>
+    <path d="M88 166h54"/>
+  </g>
+</svg>

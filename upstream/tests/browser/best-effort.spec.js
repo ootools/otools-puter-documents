@@ -1,0 +1,56 @@
+import { test, expect } from '@playwright/test';
+import { openReadOnlyPreview } from './helpers/preview.js';
+import { showAllTools } from './helpers/editor-tools.js';
+
+test('opens best-effort content, blocks every input path and downloads the original', async ({ page }, info) => {
+  await page.goto('/playground.html');
+  await openReadOnlyPreview(page, 'public/fixtures/best-effort.docx');
+  const input = page.getByRole('textbox', { name: 'Document text' });
+  const expected = 'Best-effort opening\nField result: September 17, 2026\nInserted words\nStill readable after unsupported content.';
+  await expect(input).toHaveValue(expected);
+  await input.press('ControlOrMeta+a'); await page.keyboard.insertText('Overwrite');
+  await input.press('Backspace'); await input.press('ControlOrMeta+b');
+  await input.evaluate(el => {
+    const data = new DataTransfer(); data.setData('text/plain', 'Paste');
+    el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    el.value = 'IME'; el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText' }));
+    el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+  });
+  await expect(input).toHaveValue(expected);
+  await input.press('ControlOrMeta+f');
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('words');
+  await expect(page.getByRole('button', { name: 'Replace', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Replace all', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Close find and replace', exact: true }).click();
+  await page.screenshot({ path: info.outputPath('best-effort.png') });
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download .docx', exact: true }).click();
+  await (await download).saveAs(info.outputPath('best-effort.docx'));
+  await page.getByLabel('Open DOCX file').setInputFiles('public/fixtures/two-paragraphs.docx');
+  await expect(input).toHaveJSProperty('readOnly', false);
+  await showAllTools(page);
+  await input.press('ControlOrMeta+Home'); await page.keyboard.insertText('Editable again. ');
+  await expect(input).toHaveValue(/^Editable again\./);
+});
+
+test('the app opens unsupported files without attaching an exporter', async ({ page }) => {
+  await page.goto('/mock.html');
+  await expect(page.getByRole('textbox', { name: 'Document text' })).toBeVisible();
+  await openReadOnlyPreview(page, 'public/fixtures/best-effort.docx');
+  expect(await page.evaluate(() => !!window.__docs.current.view.doc.exporter)).toBe(false);
+});
+
+test('the read-only notice is a message bar that can be dismissed', async ({ page }) => {
+  await page.goto('/playground.html');
+  await openReadOnlyPreview(page, 'public/fixtures/best-effort.docx');
+  const notice = page.locator('.canvas-message');
+  await expect(notice).toContainText('This document is read-only');
+  expect(await notice.evaluate(el => el.offsetHeight)).toBeLessThan(90);
+  await notice.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await expect(notice).toBeHidden();
+  await expect(page.getByRole('textbox', { name: 'Document text' })).toBeFocused();
+  // The next document's notices start visible again.
+  await openReadOnlyPreview(page, 'public/fixtures/best-effort.docx');
+  await expect(notice).toBeVisible();
+});
