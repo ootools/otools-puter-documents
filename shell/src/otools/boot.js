@@ -6,7 +6,8 @@
  *
  *   1. 先装 i18n —— 之后所有 `t()` 才拿得到当前语言；
  *   2. 再装 DOM 翻译层 —— 它订阅 i18n 的变更，切语言时整棵树重译；
- *   3. 最后装主题跟随 —— 它会写上游的主题 storage key 并触发重画。
+ *   3. 然后装 Canvas 文本能力补丁 —— 上游渲染文档前要读这几个属性；
+ *   4. 最后装主题跟随 —— 它会写上游的主题 storage key 并触发重画。
  *
  * 顺序反过来会出现「界面按英文画完再翻一遍」这种闪一下的效果。
  *
@@ -16,6 +17,7 @@
 import { installI18n } from './i18n.js';
 import { installDomTranslation } from './dom-i18n.js';
 import { installThemeSync } from './theme-sync.js';
+import { installCanvasTextSupport } from './canvas-text-support.js';
 import { APP } from './app.js';
 import { usingHost, libraryDir } from './local.js';
 
@@ -27,6 +29,11 @@ export function boot() {
 
   installI18n();
   installDomTranslation();
+
+  // 必须在任何 Canvas 绘制之前：上游的 setCanvasTextStyle 拿不到
+  // fontKerning 就直接抛错，整份文档都打不开（macOS 的 WKWebView 至今
+  // 没有这个属性）。详见 canvas-text-support.js 的文件头。
+  installCanvasTextSupport();
 
   // 主题跟随放在 i18n 之后：上游有些面板的文案依赖主题（比如「深色」菜单项）。
   installThemeSync();
