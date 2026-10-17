@@ -15,7 +15,7 @@ import common from './i18n.common.zh-CN.js';
 export default {
   ...common,
 
-                    '.txt — words only': '.txt — 只有文字',
+  '.txt — words only': '.txt — 只有文字',
   '[Embedded object]': '[嵌入对象]',
   '[Empty polygon]': '[空多边形]',
   '[Missing picture]': '[图片缺失]',
