@@ -23,5 +23,5 @@
   "screenshots": [],
   "summary": "Documents（HeyPuter/everything 的 Word 级文档编辑器）的 OTools 插件版：样式、目录、批注、修订、表格与 docx 导入导出。文档是本机目录里的普通文件，不走任何云账号。",
   "uuid": "otools-puter-documents",
-  "version": "0.1.7"
+  "version": "0.1.8"
 }
