@@ -18,6 +18,7 @@ import { installI18n } from './i18n.js';
 import { installDomTranslation } from './dom-i18n.js';
 import { installThemeSync } from './theme-sync.js';
 import { installCanvasTextSupport } from './canvas-text-support.js';
+import { installMcpBridge } from './mcp.js';
 import { APP } from './app.js';
 import { usingHost, libraryDir } from './local.js';
 
@@ -43,6 +44,11 @@ export function boot() {
   if (usingHost()) {
     libraryDir().catch(() => { /* 建不了目录不该让启动失败 */ });
   }
+
+  // MCP 桥挂在最后：宿主读 `window.__otoolsMcp` 时会经 local.js 用到上面装好的
+  // 库目录能力，所以它必须晚于 i18n / 主题就绪。挂载本身没有副作用（只赋值，
+  // 不触发工具调用）。
+  installMcpBridge();
 
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.otoolsPlugin = APP.id;

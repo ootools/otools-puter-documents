@@ -58,7 +58,7 @@ const args = [vitest, 'run'];
 if (!withUpstream) {
   const layer = filters.length
     ? filters
-    : ['tests/i18n.test.js', 'tests/dom-i18n.test.js', 'tests/canvas-text-support.test.js'];
+    : ['tests/i18n.test.js', 'tests/dom-i18n.test.js', 'tests/canvas-text-support.test.js', 'tests/mcp.test.js'];
   args.push(...layer);
 } else {
   args.push(...filters);
