@@ -19,6 +19,7 @@ import { installDomTranslation } from './dom-i18n.js';
 import { installThemeSync } from './theme-sync.js';
 import { installCanvasTextSupport } from './canvas-text-support.js';
 import { installMcpBridge } from './mcp.js';
+import { documentsMcpTools } from './mcp-tools.js';
 import { APP } from './app.js';
 import { usingHost, libraryDir } from './local.js';
 
@@ -47,8 +48,9 @@ export function boot() {
 
   // MCP 桥挂在最后：宿主读 `window.__otoolsMcp` 时会经 local.js 用到上面装好的
   // 库目录能力，所以它必须晚于 i18n / 主题就绪。挂载本身没有副作用（只赋值，
-  // 不触发工具调用）。
-  installMcpBridge();
+  // 不触发工具调用）。领域级工具（读/改当前文档）在 `otools/mcp-tools.js`；活句柄
+  // （当前编辑器 view）由 overlay 入口 `main.js` 经 `setDocumentsMcpContext` 交进来。
+  installMcpBridge({ extraTools: documentsMcpTools() });
 
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.otoolsPlugin = APP.id;

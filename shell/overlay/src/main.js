@@ -11,6 +11,7 @@
  * 其余启动流程一行未改。
  */
 import './otools/boot.js';
+import { setDocumentsMcpContext } from './otools/mcp-context.js';
 import './styles/index.css';
 import { el } from './ui/dom.js';
 import { icon } from './ui/icons.js';
@@ -35,6 +36,12 @@ let current = null; // { kind: 'home' | 'editor' | 'gate', view }
 let launchedPath = null;
 let droppedFiles = null;
 let importRequest = 0;
+
+// MCP 领域工具的活句柄：当前编辑器 view（含 .doc 与 .engine）；在首页/登录页时是 null。
+// getter 捕获 `current`，切换文档后自动跟上。
+setDocumentsMcpContext({
+  editorContext: () => (current?.kind === 'editor' ? current.view : null),
+});
 
 /* ---------- Routing ---------- */
 

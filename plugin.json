@@ -29,8 +29,30 @@
     "backend": "webview",
     "namespace": "puter-documents",
     "expose": [
-      "list_documents",
-      "read_document_bytes"
-    ]
+      "list_library",
+      "read_file",
+      "write_file",
+      "library_path",
+      "get_document",
+      "read_text",
+      "get_selection",
+      "select_range",
+      "insert_text",
+      "append_text",
+      "save"
+    ],
+    "annotations": {
+      "list_library": { "readOnly": true },
+      "read_file": { "readOnly": true },
+      "library_path": { "readOnly": true },
+      "write_file": { "readOnly": false, "destructive": true },
+      "get_document": { "readOnly": true },
+      "read_text": { "readOnly": true },
+      "get_selection": { "readOnly": true },
+      "select_range": { "readOnly": false, "destructive": false },
+      "insert_text": { "readOnly": false, "destructive": false },
+      "append_text": { "readOnly": false, "destructive": false },
+      "save": { "readOnly": false, "destructive": false }
+    }
   }
 }
